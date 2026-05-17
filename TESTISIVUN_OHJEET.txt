@@ -1,11 +1,16 @@
-# Kattosää Pro testiversio - De before initialization korjattu
+# Kattosää Pro testiversio - työmaajärjestyksen pisteytys korjattu
 
 Korjattu:
-- Virhe "Cannot access 'De' before initialization" poistettu.
-- Syynä oli työmaajärjestyksen useEffect, joka käytti effectiveRules-arvoa ennen kuin se oli alustettu.
-- Kyseinen logiikka siirrettiin oikeaan kohtaan effectiveRules-muuttujan jälkeen.
-- Backendin syntaksi tarkistettu.
-- Frontend build testattu onnistuneesti, jos riippuvuuksien asennus onnistui ympäristössä.
+- Kaikki työmaat eivät enää näytä "Tee ensin".
+- Vain järjestyksen ensimmäinen sopiva työmaa saa tekstin "Tee ensin".
+- Muut sopivat työmaat saavat tekstin "Seuraavana".
+- Osittain sopivat työmaat saavat tekstin "Seuraa".
+- Huonot työmaat saavat tekstin "Odota".
+- Järjestys huomioi:
+  1. löytyykö riittävä pinnoitusikkuna
+  2. kuinka aikaisin ikkuna alkaa
+  3. sopivien päivätuntien määrä
+  4. työmaan nimi tasatilanteessa
 
 Render-asetukset:
 

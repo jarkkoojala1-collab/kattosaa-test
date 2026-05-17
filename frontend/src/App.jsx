@@ -772,10 +772,38 @@ const selectedTime =
         })
       );
 
-      setWorksiteRanking(
-        results.sort((a, b) => {
-          if (a.sortTime !== b.sortTime) return a.sortTime - b.sortTime;
+      const sorted = results.sort((a, b) => {
+        const statusWeight = { ok: 0, partial: 1, bad: 2, error: 3 };
+
+        if ((statusWeight[a.status] ?? 9) !== (statusWeight[b.status] ?? 9)) {
+          return (statusWeight[a.status] ?? 9) - (statusWeight[b.status] ?? 9);
+        }
+
+        if (a.sortTime !== b.sortTime) return a.sortTime - b.sortTime;
+
+        if ((b.okHours || 0) !== (a.okHours || 0)) {
           return (b.okHours || 0) - (a.okHours || 0);
+        }
+
+        return String(a.name).localeCompare(String(b.name), "fi");
+      });
+
+      setWorksiteRanking(
+        sorted.map((site, index) => {
+          let recommendation = "Odota";
+
+          if (site.status === "ok") {
+            recommendation = index === 0 ? "Tee ensin" : "Seuraavana";
+          } else if (site.status === "partial") {
+            recommendation = "Seuraa";
+          } else if (site.status === "error") {
+            recommendation = "Virhe";
+          }
+
+          return {
+            ...site,
+            recommendation
+          };
         })
       );
     } catch (error) {
@@ -1345,11 +1373,12 @@ const selectedTime =
                           </span>
                           <small>
                             Sopivia päivätunteja: {site.okHours ?? 0} ·
-                            {site.area === "pirkanmaa" ? " Pirkanmaa" : " Uusimaa"}
+                            {site.area === "pirkanmaa" ? " Pirkanmaa" : " Uusimaa"} ·
+                            {site.status === "ok" ? "riittävä ikkuna löytyi" : site.status === "partial" ? "yksittäisiä sopivia tunteja" : "ei sopivaa jaksoa"}
                           </small>
                         </div>
                         <div className="ranking-status">
-                          {site.status === "ok" ? "Tee ensin" : site.status === "partial" ? "Seuraa" : "Odota"}
+                          {site.recommendation || "Odota"}
                         </div>
                       </div>
                     ))}
