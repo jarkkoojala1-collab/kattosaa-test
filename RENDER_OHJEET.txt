@@ -1,34 +1,23 @@
-# Kattosää testiversio - Pro-parametrit
+# Kattosää Pro testiversio - backend korjattu
 
-Tämä on erillinen testiversio, jossa on mukana Pro-tyyppiset ominaisuudet ilman oikeaa maksujärjestelmää.
+Korjattu:
+- Backendin express/cors riippuvuudet lisätty varmasti juuritason package.json-tiedostoon.
+- Lisätty /api/health backendin toiminnan tarkistamiseen.
+- Lisätty API 404 JSON-vastaus.
+- Varmistettu express.json kirjautumista varten.
+- Backendin syntaksi tarkistettu.
 
-Mukana:
-- kirjautuminen
-- logo ja PWA-kuvakkeet
-- kirjautumissivun kattotaustakuva
-- Uusimaa / Pirkanmaa -aluevalinta
-- iPhone-karttakorjaus
-- yrityksen nimi
-- käyttöoikeustason simulointi: Demo / Basic / Pro
-- ominaisuuksien lukitus käyttöoikeuden mukaan
-- yrityskohtaiset muokattavat sääparametrit:
-  - maksimikosteus %
-  - minimilämpötila °C
-  - maksimituuli m/s
-  - maksimisade mm/h
-  - vaadittu hyvä pinnoitusaika tunneissa
-- kartan värit ja tuntitaulukko muuttuvat valittujen parametrien mukaan
-- seuraava hyvä pinnoitusikkuna
-- työmaiden tallennus Pro-tasolla
-- asetukset tallentuvat selaimen localStorageen testikäyttöä varten
+Renderissä testaa julkaisun jälkeen:
+https://SINUN-TESTI-OSOITE.onrender.com/api/health
 
-Huomio:
-Tämä on testimalli. Oikeassa maksullisessa versiossa nämä tiedot siirrettäisiin tietokantaan ja suojattaisiin yrityskohtaisesti.
+Sen pitäisi palauttaa esimerkiksi:
+{
+  "ok": true,
+  "service": "Kattosää backend",
+  "time": "..."
+}
 
 Render-asetukset:
-
-Name:
-kattosaa-test-pro
 
 Build Command:
 npm run render-build

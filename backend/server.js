@@ -474,6 +474,15 @@ function makeHourlyRows(forecasts) {
   }));
 }
 
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "Kattosää backend",
+    time: new Date().toISOString()
+  });
+});
+
 app.get("/api/forecast-map", async (req, res) => {
   try {
     const areaId = String(req.query.area || "uusimaa");
@@ -511,6 +520,7 @@ app.get("/api/forecast-map", async (req, res) => {
 
 app.get("/api/search", async (req, res) => {
   try {
+    const area = getArea(String(req.query.area || "uusimaa"));
     const city = String(req.query.city || "").trim();
     const timeIso = req.query.time ? String(req.query.time) : new Date().toISOString();
     if (!city) return res.status(400).json({ error: "Paikkakunta puuttuu" });
@@ -622,6 +632,14 @@ app.get("/api/session", (req, res) => {
   return res.status(401).json({ ok: false });
 });
 
+
+
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    error: "API-reittiä ei löytynyt",
+    path: req.path
+  });
+});
 
 app.use(express.static(frontendDistPath));
 
