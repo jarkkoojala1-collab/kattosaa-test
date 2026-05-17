@@ -1,0 +1,25 @@
+{
+  "name": "kattosaa-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./node_modules/vite/bin/vite.js build frontend",
+    "render-build": "npm install && npm run build",
+    "start": "node backend/server.js"
+  },
+  "engines": {
+    "node": "20.x",
+    "npm": "10.x"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "leaflet": "^1.9.4",
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
