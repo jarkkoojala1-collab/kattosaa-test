@@ -429,13 +429,7 @@ export default function App() {
     localStorage.setItem("kattosaaWorksites", JSON.stringify(savedWorksites));
   }, [savedWorksites]);
 
-  useEffect(() => {
-    // Työmaajärjestys vanhenee, jos työmaat, alue tai pinnoitusparametrit muuttuvat.
-    setWorksiteRanking([]);
-    setRankingError("");
-  }, [savedWorksites, selectedArea, effectiveRules]);
-
-  const selectedTime =
+const selectedTime =
     timelineItems.find((item) => item.time === selectedTimeKey) || timelineItems[0];
 
   const activeArea = AREA_CONFIG[selectedArea] || AREA_CONFIG.uusimaa;
@@ -448,6 +442,14 @@ export default function App() {
     .map((point) => applyRulesToPoint(point, effectiveRules));
   const center = activeArea.center;
   const mapBounds = activeArea.bounds;
+
+  useEffect(() => {
+    // Työmaajärjestys vanhenee, jos työmaat, alue tai pinnoitusparametrit muuttuvat.
+    setWorksiteRanking([]);
+    setRankingError("");
+  }, [savedWorksites, selectedArea, effectiveRules]);
+
+
   const selectedRadarFrame = radarFrames[radarIndex];
 
   const timelineDays = useMemo(() => {

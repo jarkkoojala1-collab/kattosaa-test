@@ -1,15 +1,11 @@
-# Kattosää Pro testiversio - Invalid LatLng korjattu
+# Kattosää Pro testiversio - De before initialization korjattu
 
 Korjattu:
-- Sovellus ei enää kaadu, jos tallennetulta työmaalta puuttuu lat/lon.
-- Kartalle ei piirretä valittua paikkaa, jos koordinaatit puuttuvat.
-- Kartan pisteet suodatetaan niin, että vain validit koordinaatit piirretään.
-- Vanhoista localStorage-työmaista hyväksytään vain rivit, joilla on nimi.
-- Työmaan avaaminen ei enää yritä keskittää karttaa undefined-koordinaatteihin.
-- Työmaan tallennus estetään, jos koordinaatit puuttuvat.
-
-Jos vanha selainmuisti on rikki:
-Asetukset / selaimen sivustodata voi tyhjentää testisivulta, mutta tämän version pitäisi kestää myös vanhat puutteelliset työmaat.
+- Virhe "Cannot access 'De' before initialization" poistettu.
+- Syynä oli työmaajärjestyksen useEffect, joka käytti effectiveRules-arvoa ennen kuin se oli alustettu.
+- Kyseinen logiikka siirrettiin oikeaan kohtaan effectiveRules-muuttujan jälkeen.
+- Backendin syntaksi tarkistettu.
+- Frontend build testattu onnistuneesti, jos riippuvuuksien asennus onnistui ympäristössä.
 
 Render-asetukset:
 
