@@ -1,21 +1,15 @@
-# Kattosää Pro testiversio - backend korjattu
+# Kattosää Pro testiversio - Invalid LatLng korjattu
 
 Korjattu:
-- Backendin express/cors riippuvuudet lisätty varmasti juuritason package.json-tiedostoon.
-- Lisätty /api/health backendin toiminnan tarkistamiseen.
-- Lisätty API 404 JSON-vastaus.
-- Varmistettu express.json kirjautumista varten.
-- Backendin syntaksi tarkistettu.
+- Sovellus ei enää kaadu, jos tallennetulta työmaalta puuttuu lat/lon.
+- Kartalle ei piirretä valittua paikkaa, jos koordinaatit puuttuvat.
+- Kartan pisteet suodatetaan niin, että vain validit koordinaatit piirretään.
+- Vanhoista localStorage-työmaista hyväksytään vain rivit, joilla on nimi.
+- Työmaan avaaminen ei enää yritä keskittää karttaa undefined-koordinaatteihin.
+- Työmaan tallennus estetään, jos koordinaatit puuttuvat.
 
-Renderissä testaa julkaisun jälkeen:
-https://SINUN-TESTI-OSOITE.onrender.com/api/health
-
-Sen pitäisi palauttaa esimerkiksi:
-{
-  "ok": true,
-  "service": "Kattosää backend",
-  "time": "..."
-}
+Jos vanha selainmuisti on rikki:
+Asetukset / selaimen sivustodata voi tyhjentää testisivulta, mutta tämän version pitäisi kestää myös vanhat puutteelliset työmaat.
 
 Render-asetukset:
 

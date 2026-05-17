@@ -26,12 +26,12 @@ function MapMover({ lat, lon, centerLat, centerLon, moveKey, areaMoveKey, areaZo
   }, [centerLat, centerLon, areaMoveKey, areaZoom, map]);
 
   useEffect(() => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return;
     if (lastMoveKeyRef.current === moveKey) return;
 
     lastMoveKeyRef.current = moveKey;
 
-    map.flyTo([lat, lon], Math.max(map.getZoom(), 10), {
+    map.flyTo([Number(lat), Number(lon)], Math.max(map.getZoom(), 10), {
       animate: true,
       duration: 0.6
     });
@@ -198,9 +198,14 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
 }
 
+
+function hasValidCoordinates(item) {
+  return Number.isFinite(Number(item?.lat)) && Number.isFinite(Number(item?.lon));
+}
+
 function isInsideArea(point, area) {
-  if (!point || !area) return false;
-  return distanceKm(area.center[0], area.center[1], point.lat, point.lon) <= area.radiusKm + 2;
+  if (!point || !area || !hasValidCoordinates(point)) return false;
+  return distanceKm(area.center[0], area.center[1], Number(point.lat), Number(point.lon)) <= area.radiusKm + 2;
 }
 
 
@@ -354,11 +359,18 @@ export default function App() {
   });
   const [savedWorksites, setSavedWorksites] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("kattosaaWorksites") || "[]");
+      const sites = JSON.parse(localStorage.getItem("kattosaaWorksites") || "[]");
+      return Array.isArray(sites)
+        ? sites.filter((site) => site?.name)
+        : [];
     } catch {
       return [];
     }
   });
+
+  const [worksiteRanking, setWorksiteRanking] = useState([]);
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingError, setRankingError] = useState("");
 
   const [city, setCity] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -401,6 +413,28 @@ export default function App() {
     }
   }, [timelineItems, selectedTimeKey]);
 
+  useEffect(() => {
+    localStorage.setItem("kattosaaCompanyName", companyName);
+  }, [companyName]);
+
+  useEffect(() => {
+    localStorage.setItem("kattosaaPlan", activePlan);
+  }, [activePlan]);
+
+  useEffect(() => {
+    localStorage.setItem("kattosaaWeatherRules", JSON.stringify(weatherRules));
+  }, [weatherRules]);
+
+  useEffect(() => {
+    localStorage.setItem("kattosaaWorksites", JSON.stringify(savedWorksites));
+  }, [savedWorksites]);
+
+  useEffect(() => {
+    // Työmaajärjestys vanhenee, jos työmaat, alue tai pinnoitusparametrit muuttuvat.
+    setWorksiteRanking([]);
+    setRankingError("");
+  }, [savedWorksites, selectedArea, effectiveRules]);
+
   const selectedTime =
     timelineItems.find((item) => item.time === selectedTimeKey) || timelineItems[0];
 
@@ -410,7 +444,7 @@ export default function App() {
   const effectiveRules = canUseCustomRules ? weatherRules : DEFAULT_WEATHER_RULES;
   const rawPoints = selectedTime?.points || [];
   const points = rawPoints
-    .filter((point) => isInsideArea(point, activeArea))
+    .filter((point) => hasValidCoordinates(point) && isInsideArea(point, activeArea))
     .map((point) => applyRulesToPoint(point, effectiveRules));
   const center = activeArea.center;
   const mapBounds = activeArea.bounds;
@@ -660,7 +694,10 @@ export default function App() {
   }
 
   function saveSelectedAsWorksite() {
-    if (!selectedPlace) return;
+    if (!selectedPlace || !hasValidCoordinates(selectedPlace)) {
+      setErrorText("Työmaata ei voitu tallentaa, koska sijaintikoordinaatit puuttuvat.");
+      return;
+    }
 
     const exists = savedWorksites.some((site) => site.name === selectedPlace.name);
     if (exists) return;
@@ -670,8 +707,8 @@ export default function App() {
       {
         id: `${selectedPlace.name}-${Date.now()}`,
         name: selectedPlace.name,
-        lat: selectedPlace.lat,
-        lon: selectedPlace.lon,
+        lat: Number(selectedPlace.lat),
+        lon: Number(selectedPlace.lon),
         area: selectedArea,
         createdAt: new Date().toISOString()
       }
@@ -680,6 +717,70 @@ export default function App() {
 
   function removeWorksite(id) {
     setSavedWorksites((current) => current.filter((site) => site.id !== id));
+    setWorksiteRanking((current) => current.filter((item) => item.id !== id));
+  }
+
+  async function updateWorksiteRanking() {
+    if (!savedWorksites.length) {
+      setWorksiteRanking([]);
+      return;
+    }
+
+    setRankingLoading(true);
+    setRankingError("");
+
+    try {
+      const results = await Promise.all(
+        savedWorksites.map(async (site) => {
+          try {
+            const response = await fetch(
+              `${API_BASE}/api/place-forecast?city=${encodeURIComponent(site.name)}&area=${site.area || selectedArea}`
+            );
+            const result = await response.json();
+
+            if (!response.ok) {
+              throw new Error(result.error || "Työmaan ennustetta ei voitu hakea");
+            }
+
+            const hourly = result.hourly || [];
+            const daytimeRows = hourly.filter((row) => isForecastDayHour(row.time));
+            const window = findGoodWindow(daytimeRows, effectiveRules);
+            const evaluatedRows = daytimeRows.map((row) => applyRulesToHourlyRow(row, effectiveRules));
+            const okHours = evaluatedRows.filter((row) => row.ok).length;
+
+            return {
+              ...site,
+              lat: hasValidCoordinates(site) ? Number(site.lat) : result.lat,
+              lon: hasValidCoordinates(site) ? Number(site.lon) : result.lon,
+              source: result.source,
+              forecastName: result.name,
+              window,
+              okHours,
+              status: window ? "ok" : okHours > 0 ? "partial" : "bad",
+              sortTime: window ? new Date(window.start).getTime() : Number.POSITIVE_INFINITY
+            };
+          } catch (error) {
+            return {
+              ...site,
+              error: error.message,
+              status: "error",
+              sortTime: Number.POSITIVE_INFINITY
+            };
+          }
+        })
+      );
+
+      setWorksiteRanking(
+        results.sort((a, b) => {
+          if (a.sortTime !== b.sortTime) return a.sortTime - b.sortTime;
+          return (b.okHours || 0) - (a.okHours || 0);
+        })
+      );
+    } catch (error) {
+      setRankingError(error.message);
+    } finally {
+      setRankingLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -1018,7 +1119,7 @@ export default function App() {
         {userLocation && (
           <>
             <Circle
-              center={[userLocation.lat, userLocation.lon]}
+              center={[Number(userLocation.lat), Number(userLocation.lon)]}
               radius={250}
               pathOptions={{
                 color: "#2563eb",
@@ -1028,7 +1129,7 @@ export default function App() {
               }}
             />
             <CircleMarker
-              center={[userLocation.lat, userLocation.lon]}
+              center={[Number(userLocation.lat), Number(userLocation.lon)]}
               radius={8}
               pathOptions={{
                 color: "#1d4ed8",
@@ -1047,9 +1148,9 @@ export default function App() {
           </>
         )}
 
-        {selectedPlace && (
+        {selectedPlace && hasValidCoordinates(selectedPlace) && (
           <CircleMarker
-            center={[selectedPlace.lat, selectedPlace.lon]}
+            center={[Number(selectedPlace.lat), Number(selectedPlace.lon)]}
             radius={10}
             pathOptions={{
               color: "#0f4c81",
@@ -1164,9 +1265,20 @@ export default function App() {
             {activePlanConfig.worksites && (
               <section className="saved-worksites-card">
                 <div className="saved-worksites-head">
-                  <strong>Tallennetut työmaat</strong>
-                  <span>{savedWorksites.length} kpl</span>
+                  <div>
+                    <strong>Tallennetut työmaat</strong>
+                    <span>{savedWorksites.length} kpl</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="rank-worksites-button"
+                    onClick={updateWorksiteRanking}
+                    disabled={rankingLoading || savedWorksites.length === 0}
+                  >
+                    {rankingLoading ? "Järjestetään..." : "Laske toteutusjärjestys"}
+                  </button>
                 </div>
+
                 {savedWorksites.length === 0 ? (
                   <p>Valitse paikka kartalta tai haulla ja tallenna se työmaaksi.</p>
                 ) : (
@@ -1175,27 +1287,68 @@ export default function App() {
                       <div className="saved-worksite" key={site.id}>
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={async () => {
                             setCity(site.name);
-                            setSelectedPlace({
-                              name: site.name,
-                              lat: site.lat,
-                              lon: site.lon,
-                              source: "Tallennettu työmaa",
-                              weather: null,
-                              ok: false,
-                              score: 0
-                            });
-                            setSelectedMoveKey((value) => value + 1);
-                            loadPlaceForecast(site.name).catch((error) => setErrorText(error.message));
+                            setErrorText("");
+
+                            if (hasValidCoordinates(site)) {
+                              setSelectedPlace({
+                                name: site.name,
+                                lat: Number(site.lat),
+                                lon: Number(site.lon),
+                                source: "Tallennettu työmaa",
+                                weather: null,
+                                ok: false,
+                                score: 0
+                              });
+                              setSelectedMoveKey((value) => value + 1);
+                            } else {
+                              setSelectedPlace(null);
+                            }
+
+                            try {
+                              await loadPlaceForecast(site.name);
+                            } catch (error) {
+                              setErrorText(error.message);
+                            }
                           }}
                         >
                           {site.name}
                         </button>
-                        <span>{site.area === "pirkanmaa" ? "Pirkanmaa" : "Uusimaa"}</span>
+                        <span>{hasValidCoordinates(site) ? (site.area === "pirkanmaa" ? "Pirkanmaa" : "Uusimaa") : "Sijainti haetaan"}</span>
                         <button type="button" className="remove-worksite" onClick={() => removeWorksite(site.id)}>
                           Poista
                         </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {rankingError && <div className="ranking-error">{rankingError}</div>}
+
+                {worksiteRanking.length > 0 && (
+                  <div className="worksite-ranking">
+                    <div className="worksite-ranking-title">Suositeltu toteutusjärjestys</div>
+                    {worksiteRanking.map((site, index) => (
+                      <div className={`ranking-row ${site.status}`} key={site.id}>
+                        <div className="ranking-number">{index + 1}</div>
+                        <div className="ranking-main">
+                          <strong>{site.name}</strong>
+                          <span>
+                            {site.window
+                              ? `Paras ikkuna: ${formatWindow(site.window)}`
+                              : site.error
+                                ? `Virhe: ${site.error}`
+                                : "Ei riittävää pinnoitusikkunaa 72 h ennusteessa"}
+                          </span>
+                          <small>
+                            Sopivia päivätunteja: {site.okHours ?? 0} ·
+                            {site.area === "pirkanmaa" ? " Pirkanmaa" : " Uusimaa"}
+                          </small>
+                        </div>
+                        <div className="ranking-status">
+                          {site.status === "ok" ? "Tee ensin" : site.status === "partial" ? "Seuraa" : "Odota"}
+                        </div>
                       </div>
                     ))}
                   </div>
