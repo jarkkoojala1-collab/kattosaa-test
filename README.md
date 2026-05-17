@@ -1,48 +1,37 @@
-# Kattosää testiversio
+# Kattosää testiversio - Pro-parametrit
 
-Tämä paketti on tarkoitettu ERILLISEEN testisivuun.
+Tämä on erillinen testiversio, jossa on mukana Pro-tyyppiset ominaisuudet ilman oikeaa maksujärjestelmää.
 
-Älä lataa tätä nykyiseen tuotanto-repoon, jos nykyinen kattosaa.fi toimii hyvin.
+Mukana:
+- kirjautuminen
+- logo ja PWA-kuvakkeet
+- kirjautumissivun kattotaustakuva
+- Uusimaa / Pirkanmaa -aluevalinta
+- iPhone-karttakorjaus
+- yrityksen nimi
+- käyttöoikeustason simulointi: Demo / Basic / Pro
+- ominaisuuksien lukitus käyttöoikeuden mukaan
+- yrityskohtaiset muokattavat sääparametrit:
+  - maksimikosteus %
+  - minimilämpötila °C
+  - maksimituuli m/s
+  - maksimisade mm/h
+  - vaadittu hyvä pinnoitusaika tunneissa
+- kartan värit ja tuntitaulukko muuttuvat valittujen parametrien mukaan
+- seuraava hyvä pinnoitusikkuna
+- työmaiden tallennus Pro-tasolla
+- asetukset tallentuvat selaimen localStorageen testikäyttöä varten
 
-## Tee näin
+Huomio:
+Tämä on testimalli. Oikeassa maksullisessa versiossa nämä tiedot siirrettäisiin tietokantaan ja suojattaisiin yrityskohtaisesti.
 
-1. Luo GitHubiin uusi repository:
-   kattosaa-test
-
-2. Pura tämä ZIP.
-
-3. Lataa puretun kansion SISÄLTÖ GitHubin uuteen kattosaa-test-repositoryyn.
-
-GitHubin etusivulla pitää näkyä:
-- backend
-- frontend
-- package.json
-- render.yaml
-- README.md
-
-4. Luo Renderiin uusi Web Service.
+Render-asetukset:
 
 Name:
-kattosaa-test
-
-Root Directory:
-jätä tyhjäksi
+kattosaa-test-pro
 
 Build Command:
 npm run render-build
 
 Start Command:
 npm start
-
-Plan:
-Free riittää testiin.
-
-5. Kun Render on valmis, saat osoitteen esimerkiksi:
-https://kattosaa-test.onrender.com
-
-Älä lisää tähän testipalveluun kattosaa.fi-domainia.
-Pidä kattosaa.fi nykyisessä toimivassa palvelussa.
-
-## Kun testiversio toimii
-
-Kun testaat ja kaikki toimii, voit myöhemmin päivittää varsinaisen tuotantosivun samalla koodilla.

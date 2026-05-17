@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: kattosaa-test
+    name: kattosaa-test-pro
     env: node
     plan: free
     buildCommand: npm run render-build

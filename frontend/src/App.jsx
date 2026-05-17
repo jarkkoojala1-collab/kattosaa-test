@@ -203,6 +203,126 @@ function isInsideArea(point, area) {
   return distanceKm(area.center[0], area.center[1], point.lat, point.lon) <= area.radiusKm + 2;
 }
 
+
+const DEFAULT_WEATHER_RULES = {
+  maxHumidity: 70,
+  minTemperature: 5,
+  maxWind: 10,
+  maxPrecipitation: 0.1,
+  requiredGoodHours: 4
+};
+
+const PLAN_CONFIG = {
+  demo: {
+    name: "Demo",
+    description: "Peruskartta ja Uusimaa testikäyttöön",
+    areas: ["uusimaa"],
+    customRules: false,
+    worksites: false,
+    reports: false
+  },
+  basic: {
+    name: "Basic",
+    description: "Aluevalinnat ja perusennuste yrityskäyttöön",
+    areas: ["uusimaa", "pirkanmaa"],
+    customRules: false,
+    worksites: false,
+    reports: false
+  },
+  pro: {
+    name: "Pro",
+    description: "Yrityskohtaiset säärajat, työmaat ja pinnoitusikkunat",
+    areas: ["uusimaa", "pirkanmaa"],
+    customRules: true,
+    worksites: true,
+    reports: true
+  }
+};
+
+function clampNumber(value, fallback) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function evaluateWeather(weather, rules = DEFAULT_WEATHER_RULES) {
+  if (!weather) return { ok: false, score: 0 };
+
+  const temp = clampNumber(weather.temp, -99);
+  const humidity = clampNumber(weather.humidity, 999);
+  const wind = clampNumber(weather.wind, 999);
+  const precipitation = clampNumber(weather.precipitation, 0);
+
+  const ok =
+    temp >= rules.minTemperature &&
+    humidity <= rules.maxHumidity &&
+    wind <= rules.maxWind &&
+    precipitation <= rules.maxPrecipitation;
+
+  let score = 100;
+
+  if (temp < rules.minTemperature) score -= Math.min(45, (rules.minTemperature - temp) * 8);
+  if (humidity > rules.maxHumidity) score -= Math.min(45, (humidity - rules.maxHumidity) * 2.2);
+  if (wind > rules.maxWind) score -= Math.min(35, (wind - rules.maxWind) * 5);
+  if (precipitation > rules.maxPrecipitation) score -= Math.min(65, (precipitation - rules.maxPrecipitation) * 90);
+
+  return {
+    ok,
+    score: Math.max(0, Math.min(100, Math.round(score)))
+  };
+}
+
+function applyRulesToPoint(point, rules) {
+  if (!point) return point;
+  const evaluation = evaluateWeather(point.weather, rules);
+  return {
+    ...point,
+    ok: evaluation.ok,
+    score: evaluation.score
+  };
+}
+
+function applyRulesToHourlyRow(row, rules) {
+  if (!row) return row;
+  const evaluation = evaluateWeather(row.weather, rules);
+  return {
+    ...row,
+    ok: evaluation.ok,
+    score: evaluation.score
+  };
+}
+
+function findGoodWindow(rows, rules) {
+  const required = Math.max(1, Number.parseInt(rules.requiredGoodHours, 10) || 4);
+  const evaluatedRows = (rows || []).map((row) => applyRulesToHourlyRow(row, rules));
+
+  for (let index = 0; index <= evaluatedRows.length - required; index += 1) {
+    const slice = evaluatedRows.slice(index, index + required);
+    const isConsecutive = slice.every((row, rowIndex) => {
+      if (!row.ok) return false;
+      if (rowIndex === 0) return true;
+
+      const previous = new Date(slice[rowIndex - 1].time).getTime();
+      const current = new Date(row.time).getTime();
+      return current - previous <= 65 * 60 * 1000;
+    });
+
+    if (isConsecutive) {
+      return {
+        start: slice[0].time,
+        end: slice[slice.length - 1].time,
+        hours: required
+      };
+    }
+  }
+
+  return null;
+}
+
+function formatWindow(window) {
+  if (!window) return "Ei löytynyt 72 h ennusteesta";
+  return `${formatTime(window.start)} – ${formatHour(window.end)} (${window.hours} h)`;
+}
+
 export default function App() {
   const [forecast, setForecast] = useState(null);
   const [loadingMap, setLoadingMap] = useState(true);
@@ -219,6 +339,26 @@ export default function App() {
   const [areaMoveKey, setAreaMoveKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem("kattosaaCompanyName") || "Kattofirma Oy");
+  const [activePlan, setActivePlan] = useState(() => localStorage.getItem("kattosaaPlan") || "pro");
+  const [weatherRules, setWeatherRules] = useState(() => {
+    try {
+      return {
+        ...DEFAULT_WEATHER_RULES,
+        ...(JSON.parse(localStorage.getItem("kattosaaWeatherRules") || "{}"))
+      };
+    } catch {
+      return DEFAULT_WEATHER_RULES;
+    }
+  });
+  const [savedWorksites, setSavedWorksites] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("kattosaaWorksites") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   const [city, setCity] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
@@ -265,8 +405,13 @@ export default function App() {
     timelineItems.find((item) => item.time === selectedTimeKey) || timelineItems[0];
 
   const activeArea = AREA_CONFIG[selectedArea] || AREA_CONFIG.uusimaa;
+  const activePlanConfig = PLAN_CONFIG[activePlan] || PLAN_CONFIG.demo;
+  const canUseCustomRules = activePlanConfig.customRules;
+  const effectiveRules = canUseCustomRules ? weatherRules : DEFAULT_WEATHER_RULES;
   const rawPoints = selectedTime?.points || [];
-  const points = rawPoints.filter((point) => isInsideArea(point, activeArea));
+  const points = rawPoints
+    .filter((point) => isInsideArea(point, activeArea))
+    .map((point) => applyRulesToPoint(point, effectiveRules));
   const center = activeArea.center;
   const mapBounds = activeArea.bounds;
   const selectedRadarFrame = radarFrames[radarIndex];
@@ -289,9 +434,16 @@ export default function App() {
   const selectedDay = timelineDays.find((d) => d.key === selectedDayKey) || timelineDays[0];
 
   const okPercent = useMemo(() => {
-    if (!selectedTime?.totalCount) return 0;
-    return Math.round((selectedTime.okCount / selectedTime.totalCount) * 100);
-  }, [selectedTime]);
+    if (!points.length) return 0;
+    return Math.round((points.filter((point) => point.ok).length / points.length) * 100);
+  }, [points]);
+
+  const bestCoatingWindow = useMemo(() => {
+    return findGoodWindow(
+      hourlyForecast.filter((row) => isForecastDayHour(row.time)),
+      effectiveRules
+    );
+  }, [hourlyForecast, effectiveRules]);
 
   useEffect(() => {
     // iPhone Safari / PWA: Leaflet voi jäädä harmaaksi, jos koko muuttuu kesken latauksen.
@@ -305,9 +457,10 @@ export default function App() {
   }, [showPanel, selectedArea, selectedTimeKey, forecast?.generatedAt]);
 
   const visibleHourlyForecast = useMemo(() => {
-    const rows = showNightForecast
+    const rows = (showNightForecast
       ? hourlyForecast
-      : hourlyForecast.filter((row) => isForecastDayHour(row.time));
+      : hourlyForecast.filter((row) => isForecastDayHour(row.time))
+    ).map((row) => applyRulesToHourlyRow(row, effectiveRules));
 
     const groups = [];
     for (const row of rows) {
@@ -328,7 +481,7 @@ export default function App() {
       group.rows.push(row);
     }
     return groups;
-  }, [hourlyForecast, showNightForecast]);
+  }, [hourlyForecast, showNightForecast, effectiveRules]);
 
   useEffect(() => {
     // Valittu alue vaihtuu: poistetaan vanhan alueen data välittömästi
@@ -495,6 +648,46 @@ export default function App() {
     inputRef.current?.focus();
   }
 
+  function updateWeatherRule(key, value) {
+    setWeatherRules((current) => ({
+      ...current,
+      [key]: value === "" ? "" : Number(value)
+    }));
+  }
+
+  function resetWeatherRules() {
+    setWeatherRules(DEFAULT_WEATHER_RULES);
+  }
+
+  function saveSelectedAsWorksite() {
+    if (!selectedPlace) return;
+
+    const exists = savedWorksites.some((site) => site.name === selectedPlace.name);
+    if (exists) return;
+
+    setSavedWorksites((current) => [
+      ...current,
+      {
+        id: `${selectedPlace.name}-${Date.now()}`,
+        name: selectedPlace.name,
+        lat: selectedPlace.lat,
+        lon: selectedPlace.lon,
+        area: selectedArea,
+        createdAt: new Date().toISOString()
+      }
+    ]);
+  }
+
+  function removeWorksite(id) {
+    setSavedWorksites((current) => current.filter((site) => site.id !== id));
+  }
+
+  useEffect(() => {
+    // Pro-demo: päivitetään valitun paikan tila, kun yrityksen sääparametrit muuttuvat.
+    if (!selectedPlace?.weather) return;
+    setSelectedPlace((current) => applyRulesToPoint(current, effectiveRules));
+  }, [effectiveRules]);
+
   async function loadPlaceForecast(placeName) {
     const response = await fetch(
       `${API_BASE}/api/place-forecast?city=${encodeURIComponent(placeName)}&area=${selectedArea}`
@@ -592,7 +785,7 @@ export default function App() {
         throw new Error(result.error || "Hakua ei voitu suorittaa");
       }
 
-      setSelectedPlace(result);
+      setSelectedPlace(applyRulesToPoint(result, effectiveRules));
       setSelectedMoveKey((value) => value + 1);
       setForecastSource(result.source || "");
       await loadPlaceForecast(city);
@@ -947,11 +1140,68 @@ export default function App() {
             </form>
 
             <section className="summary-strip">
+              <Stat label="Yritys" value={companyName || "-"} />
+              <Stat label="Käyttötaso" value={activePlanConfig.name} />
               <Stat label="Valittu aika" value={selectedTime ? formatTime(selectedTime.time) : "-"} />
               <Stat label="Koko alue OK" value={`${okPercent}%`} />
-              <Stat label="Paikkoja kartalla" value={forecast?.placeCount ?? "-"} />
+              <Stat label="Paikkoja kartalla" value={points.length || "-"} />
               <Stat label="Rajaus" value={selectedArea === "pirkanmaa" ? "150 km Tampereelta" : "150 km Nurmijärveltä"} />
             </section>
+
+            <section className="pro-feature-strip">
+              <div>
+                <strong>Pinnoitusrajat</strong>
+                <span>
+                  Kosteus max {effectiveRules.maxHumidity} %, lämpö min {effectiveRules.minTemperature} °C,
+                  tuuli max {effectiveRules.maxWind} m/s, sade max {effectiveRules.maxPrecipitation} mm/h
+                </span>
+              </div>
+              <div className="feature-lock-note">
+                {canUseCustomRules ? "Yrityskohtaiset asetukset käytössä" : "Demo/Basic käyttää oletusrajoja"}
+              </div>
+            </section>
+
+            {activePlanConfig.worksites && (
+              <section className="saved-worksites-card">
+                <div className="saved-worksites-head">
+                  <strong>Tallennetut työmaat</strong>
+                  <span>{savedWorksites.length} kpl</span>
+                </div>
+                {savedWorksites.length === 0 ? (
+                  <p>Valitse paikka kartalta tai haulla ja tallenna se työmaaksi.</p>
+                ) : (
+                  <div className="saved-worksites-list">
+                    {savedWorksites.map((site) => (
+                      <div className="saved-worksite" key={site.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCity(site.name);
+                            setSelectedPlace({
+                              name: site.name,
+                              lat: site.lat,
+                              lon: site.lon,
+                              source: "Tallennettu työmaa",
+                              weather: null,
+                              ok: false,
+                              score: 0
+                            });
+                            setSelectedMoveKey((value) => value + 1);
+                            loadPlaceForecast(site.name).catch((error) => setErrorText(error.message));
+                          }}
+                        >
+                          {site.name}
+                        </button>
+                        <span>{site.area === "pirkanmaa" ? "Pirkanmaa" : "Uusimaa"}</span>
+                        <button type="button" className="remove-worksite" onClick={() => removeWorksite(site.id)}>
+                          Poista
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             {selectedPlace ? (
               <section className="forecast-panel">
@@ -965,9 +1215,21 @@ export default function App() {
                       Sääennusteen lähde: {forecastSource || selectedPlace.source || "Open-Meteo"}
                     </div>
                   </div>
-                  <button className="secondary-button" type="button" onClick={clearSelection}>
-                    Poista valinta
-                  </button>
+                  <div className="forecast-actions">
+                    {activePlanConfig.worksites && (
+                      <button className="secondary-button" type="button" onClick={saveSelectedAsWorksite}>
+                        Tallenna työmaaksi
+                      </button>
+                    )}
+                    <button className="secondary-button" type="button" onClick={clearSelection}>
+                      Poista valinta
+                    </button>
+                  </div>
+                </div>
+
+                <div className="best-window-card">
+                  <span>Seuraava hyvä {effectiveRules.requiredGoodHours} h pinnoitusikkuna</span>
+                  <strong>{formatWindow(bestCoatingWindow)}</strong>
                 </div>
 
                 <div className={`current-forecast-box large ${coatingClass(selectedPlace)}`}>
@@ -1045,6 +1307,118 @@ export default function App() {
 
               {showSettings && (
                 <div className="settings-content">
+                  <div className="company-settings-card">
+                    <div className="setting-label">Yritys ja käyttöoikeus</div>
+                    <label className="settings-field">
+                      Yrityksen nimi
+                      <input
+                        value={companyName}
+                        onChange={(event) => setCompanyName(event.target.value)}
+                        placeholder="Yrityksen nimi"
+                      />
+                    </label>
+
+                    <div className="plan-selector">
+                      {Object.entries(PLAN_CONFIG).map(([planId, plan]) => (
+                        <button
+                          key={planId}
+                          type="button"
+                          className={activePlan === planId ? "active" : ""}
+                          onClick={() => setActivePlan(planId)}
+                        >
+                          <strong>{plan.name}</strong>
+                          <span>{plan.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="company-settings-card">
+                    <div className="setting-label">Yrityskohtaiset pinnoitusparametrit</div>
+                    {!canUseCustomRules && (
+                      <div className="locked-feature">
+                        Muokattavat säärajat kuuluvat Pro-tasoon. Valitse Pro testataksesi yrityskohtaisia rajoja.
+                      </div>
+                    )}
+
+                    <div className="rules-grid">
+                      <label className="settings-field">
+                        Maksimikosteus %
+                        <input
+                          type="number"
+                          value={weatherRules.maxHumidity}
+                          disabled={!canUseCustomRules}
+                          onChange={(event) => updateWeatherRule("maxHumidity", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        Minim lämpötila °C
+                        <input
+                          type="number"
+                          value={weatherRules.minTemperature}
+                          disabled={!canUseCustomRules}
+                          onChange={(event) => updateWeatherRule("minTemperature", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        Maksimituuli m/s
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={weatherRules.maxWind}
+                          disabled={!canUseCustomRules}
+                          onChange={(event) => updateWeatherRule("maxWind", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        Maksimisade mm/h
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={weatherRules.maxPrecipitation}
+                          disabled={!canUseCustomRules}
+                          onChange={(event) => updateWeatherRule("maxPrecipitation", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        Vaadittu hyvä aika h
+                        <input
+                          type="number"
+                          min="1"
+                          value={weatherRules.requiredGoodHours}
+                          disabled={!canUseCustomRules}
+                          onChange={(event) => updateWeatherRule("requiredGoodHours", event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <button type="button" className="reset-rules-button" onClick={resetWeatherRules}>
+                      Palauta oletusrajat
+                    </button>
+                  </div>
+
+                  <div className="company-settings-card">
+                    <div className="setting-label">Ominaisuudet tällä käyttöoikeudella</div>
+                    <div className="feature-list">
+                      <span className={activePlanConfig.areas.includes("pirkanmaa") ? "enabled" : "disabled"}>
+                        Pirkanmaa
+                      </span>
+                      <span className={activePlanConfig.customRules ? "enabled" : "disabled"}>
+                        Sääparametrien muokkaus
+                      </span>
+                      <span className={activePlanConfig.worksites ? "enabled" : "disabled"}>
+                        Työmaiden tallennus
+                      </span>
+                      <span className={activePlanConfig.reports ? "enabled" : "disabled"}>
+                        Raportit myöhemmin
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="setting-group">
                     <div className="setting-label">Alue</div>
                     <div className="area-selector">
@@ -1058,7 +1432,12 @@ export default function App() {
                       <button
                         type="button"
                         className={selectedArea === "pirkanmaa" ? "active" : ""}
-                        onClick={() => selectedArea !== "pirkanmaa" && setSelectedArea("pirkanmaa")}
+                        disabled={!activePlanConfig.areas.includes("pirkanmaa")}
+                        onClick={() =>
+                          activePlanConfig.areas.includes("pirkanmaa") &&
+                          selectedArea !== "pirkanmaa" &&
+                          setSelectedArea("pirkanmaa")
+                        }
                       >
                         Pirkanmaa
                       </button>
